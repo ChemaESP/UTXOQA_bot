@@ -2,7 +2,7 @@ import os
 import random
 from flask import Flask, request
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, Dispatcher
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 # Flask app setup
 app = Flask(__name__)
@@ -113,25 +113,27 @@ async def help_command(update: Update, context) -> None:
 
 # Initialize the Dispatcher
 @app.route(f"/{os.getenv('BOT_TOKEN')}", methods=["POST"])
-def webhook():
-    update = Update.de_json(request.get_json(force=True), bot)
-    dispatcher.process_update(update)
+async def webhook():
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    await application.update_queue.put(update)
     return "ok"
 
 if __name__ == "__main__":
-    # Bot initialization
+    # Load the token from environment variables
     bot_token = os.getenv("BOT_TOKEN")
-    bot = Application.builder().token(bot_token).build()
-    dispatcher = Dispatcher(bot, None, workers=0)
+    
+    # Initialize the bot application
+    application = Application.builder().token(bot_token).build()
 
     # Register handlers
-    dispatcher.add_handler(CommandHandler('usethistopic', usethistopic))
-    dispatcher.add_handler(CommandHandler('setanswer', setanswer))
-    dispatcher.add_handler(CommandHandler('correctanswers', correctanswers))
-    dispatcher.add_handler(CommandHandler('winners', winners))
-    dispatcher.add_handler(CommandHandler('help', help_command))
-    dispatcher.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_messages))
+    application.add_handler(CommandHandler('usethistopic', usethistopic))
+    application.add_handler(CommandHandler('setanswer', setanswer))
+    application.add_handler(CommandHandler('correctanswers', correctanswers))
+    application.add_handler(CommandHandler('winners', winners))
+    application.add_handler(CommandHandler('help', help_command))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_messages))
 
     # Start Flask app
     port = int(os.getenv("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
