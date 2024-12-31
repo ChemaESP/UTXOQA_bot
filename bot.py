@@ -1,9 +1,11 @@
-from telegram import Update, ChatPermissions
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
+import os
 import random
+from flask import Flask, request
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, Dispatcher
 
-# Your Bot's token here
-API_TOKEN = '7697911594:AAG3GVGFn1ZUMgdIqQ7Rr3QNNz21xtkzvYY'
+# Flask app setup
+app = Flask(__name__)
 
 # Store for topic data, answers, and participants
 topic_chat_id = None
@@ -16,7 +18,7 @@ def is_in_topic(update: Update) -> bool:
     return topic_chat_id and update.message.chat.id == topic_chat_id
 
 # Command handler for '/usethistopic'
-async def usethistopic(update: Update, context: CallbackContext) -> None:
+async def usethistopic(update: Update, context) -> None:
     global topic_chat_id
     if update.message.chat.type == 'supergroup':
         topic_chat_id = update.message.chat.id
@@ -29,7 +31,7 @@ async def usethistopic(update: Update, context: CallbackContext) -> None:
         )
 
 # Command handler for '/setanswer'
-async def setanswer(update: Update, context: CallbackContext) -> None:
+async def setanswer(update: Update, context) -> None:
     global correct_answer
     if is_in_topic(update):
         if context.args:
@@ -49,7 +51,7 @@ async def setanswer(update: Update, context: CallbackContext) -> None:
         )
 
 # Message handler to handle answers
-async def handle_messages(update: Update, context: CallbackContext) -> None:
+async def handle_messages(update: Update, context) -> None:
     global correct_answer, correct_answer_users
     if is_in_topic(update):
         user = update.message.from_user
@@ -64,7 +66,7 @@ async def handle_messages(update: Update, context: CallbackContext) -> None:
                 correct_answer_users.append(username)
 
 # Command handler for '/correctanswers'
-async def correctanswers(update: Update, context: CallbackContext) -> None:
+async def correctanswers(update: Update, context) -> None:
     if is_in_topic(update):
         if correct_answer_users:
             await update.message.reply_text(f"Users who answered correctly: {', '.join(correct_answer_users)}")
@@ -76,7 +78,7 @@ async def correctanswers(update: Update, context: CallbackContext) -> None:
         )
 
 # Command handler for '/winners'
-async def winners(update: Update, context: CallbackContext) -> None:
+async def winners(update: Update, context) -> None:
     global correct_answer_users, correct_answer, topic_chat_id
     if is_in_topic(update):
         if correct_answer_users:
@@ -98,7 +100,7 @@ async def winners(update: Update, context: CallbackContext) -> None:
         await update.message.reply_text("You must use this command in the correct topic.")
 
 # Command handler for '/help'
-async def help_command(update: Update, context: CallbackContext) -> None:
+async def help_command(update: Update, context) -> None:
     help_text = (
         "Available commands:\n"
         "/usethistopic - Set the bot's topic.\n"
@@ -109,23 +111,27 @@ async def help_command(update: Update, context: CallbackContext) -> None:
     )
     await update.message.reply_text(help_text)
 
-# Main function to set up the bot
-def main():
-    # Initialize the bot with your API token
-    application = Application.builder().token(API_TOKEN).build()
+# Initialize the Dispatcher
+@app.route(f"/{os.getenv('BOT_TOKEN')}", methods=["POST"])
+def webhook():
+    update = Update.de_json(request.get_json(force=True), bot)
+    dispatcher.process_update(update)
+    return "ok"
+
+if __name__ == "__main__":
+    # Bot initialization
+    bot_token = os.getenv("BOT_TOKEN")
+    bot = Application.builder().token(bot_token).build()
+    dispatcher = Dispatcher(bot, None, workers=0)
 
     # Register handlers
-    application.add_handler(CommandHandler('usethistopic', usethistopic))
-    application.add_handler(CommandHandler('setanswer', setanswer))
-    application.add_handler(CommandHandler('correctanswers', correctanswers))
-    application.add_handler(CommandHandler('winners', winners))
-    application.add_handler(CommandHandler('help', help_command))
+    dispatcher.add_handler(CommandHandler('usethistopic', usethistopic))
+    dispatcher.add_handler(CommandHandler('setanswer', setanswer))
+    dispatcher.add_handler(CommandHandler('correctanswers', correctanswers))
+    dispatcher.add_handler(CommandHandler('winners', winners))
+    dispatcher.add_handler(CommandHandler('help', help_command))
+    dispatcher.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_messages))
 
-    # Register message handler to monitor all messages in the topic
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_messages))
-
-    # Start the bot
-    application.run_polling()
-
-if __name__ == '__main__':
-    main()
+    # Start Flask app
+    port = int(os.getenv("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
